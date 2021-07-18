@@ -1,4 +1,6 @@
 
+use std::{marker::PhantomData, mem::{size_of,size_of_val}, ptr::null_mut};
+
 use super::*;
 
 #[repr(C)]
@@ -50,51 +52,74 @@ pub struct NopWorkQueueStats;
 
 impl WorkQueueStats for NopWorkQueueStats {}
 
-/// A low overhead work queue
+/// An advanced version of [WorkQueue] with statistics gathering support.
 ///
-/// Amortized constant time queue management with effectively zero heap memory
-/// allocations per queued work item.
-pub struct WorkQueueWithStats<S:WorkQueueStats> {
+/// ```
+/// use std::cell::RefCell;
+/// use single_threaded_work_queue::{AdvancedWorkQueue,NopWorkQueueStats};
+///
+/// let value = RefCell::new(0);
+///
+/// {
+///     let mut queue = AdvancedWorkQueue::<NopWorkQueueStats>::new();
+///
+///     queue.push(|| *value.borrow_mut() += 1);
+///     queue.push(|| *value.borrow_mut() += 1);
+///
+///     queue.pump();
+/// }
+///
+/// assert_eq!(*value.borrow(), 2);
+/// ```
+pub struct AdvancedWorkQueue<'a, S:WorkQueueStats> {
     first: *mut Block,
     next: *mut Block,
     last: *mut Block,
     stats: S,
+    _store: PhantomData<[&'a ()]>
 }
 
-/// An alias for a work queue with no stat recording
-pub type WorkQueue = WorkQueueWithStats<NopWorkQueueStats>;
-
-use std::{
-    mem::{size_of,size_of_val},
-    ptr::null_mut,
-};
-
-impl<S:WorkQueueStats+Default> WorkQueueWithStats<S> {
+impl<'a, S:WorkQueueStats+Default> AdvancedWorkQueue<'a, S> {
 
     /// create a new work queue without a buffer
     pub fn new() -> Self {
         Self::with_stats(S::default())
     }
+
+    /// create a new work queue with an initial storage capacity
+    pub fn with_capacity(size: usize) -> Self {
+        Self::with_stats_and_capacity(S::default(), size)
+    }
 }
 
-impl<S:WorkQueueStats> WorkQueueWithStats<S> {
+impl<'a, S:WorkQueueStats> AdvancedWorkQueue<'a, S> {
 
+    /// create a new work queue with the specified stats tracker and without a buffer
     pub fn with_stats(stats: S) -> Self {
         Self{
             first: null_mut(),
             next: null_mut(),
             last: null_mut(),
             stats,
+            _store: PhantomData::default(),
         }
     }
 
-    /// create a new work queue with a initial storage capacity
-    pub fn with_capacity(_size: usize) -> Self {
-        todo!()
+    /// create a new work queue with the specified stats tracker and an initial
+    /// storage capacity
+    pub fn with_stats_and_capacity(stats: S, size: usize) -> Self {
+        let block = Self::new_block(size);
+        Self{
+            first: block,
+            next: block,
+            last: block,
+            stats,
+            _store: PhantomData::default(),
+        }
     }
 
     /// push a work item onto the work queue
-    pub fn push<F>(&mut self, f: F) where F: WorkItem + 'static {
+    pub fn push<F>(&mut self, f: F) where F: WorkItem + 'a {
         let f = Some(f);
         let len = size_of_val(&f);
         unsafe {
@@ -204,17 +229,20 @@ impl<S:WorkQueueStats> WorkQueueWithStats<S> {
     }
 
     /// allocate a new block
-    unsafe fn new_block(size: usize) -> *mut Block {
+    fn new_block(size: usize) -> *mut Block {
 
         use std::alloc::{alloc,Layout};
 
         let layout = Layout::from_size_align(size,32).unwrap();
 
-        let ptr = alloc(layout) as *mut Block;
+        unsafe {
 
-        ptr.write(Block::new(size));
+            let ptr = alloc(layout) as *mut Block;
 
-        ptr
+            ptr.write(Block::new(size));
+
+            ptr
+        }
     }
 }
 

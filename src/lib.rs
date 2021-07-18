@@ -2,25 +2,22 @@
 //! enqueue and execute FnOnce closures
 //!
 //! ```
-//! use std::{rc::Rc,cell::RefCell};
+//! use std::cell::RefCell;
 //! use single_threaded_work_queue::WorkQueue;
 //!
-//! let value = Rc::new(RefCell::new(1));
+//! let value = RefCell::new(0);
 //!
 //! {
 //!     let mut que = WorkQueue::new();
 //!
-//!     que.push({
-//!         let value = value.clone();
-//!         move || *value.borrow_mut() += 1
-//!     });
+//!     que.push(|| *value.borrow_mut() += 1);
+//!     que.push(|| *value.borrow_mut() += 1);
 //!
 //!     que.pump();
 //! }
 //!
 //! assert_eq!(*value.borrow(), 2);
 //! ```
-
 
 /// A run once work item.
 pub trait WorkItem {
@@ -95,6 +92,42 @@ impl<T> From<T> for WorkItemWrapper<T> {
 
 mod work_queue;
 pub use work_queue::*;
+
+
+/// A low overhead work queue for `FnOnce()` work items.
+///
+/// Amortized constant time queue management with effectively zero heap memory
+/// allocations per queued work item.
+pub struct WorkQueue<'a>(AdvancedWorkQueue<'a, NopWorkQueueStats>);
+
+impl<'a> WorkQueue<'a> {
+
+    /// initialize a new instance of a work queue
+    pub fn new() -> Self {
+        Self(AdvancedWorkQueue::new())
+    }
+
+    /// create a new work queue with a initial storage capacity
+    pub fn with_capacity(size: usize) -> Self {
+        Self(AdvancedWorkQueue::with_capacity(size))
+    }
+
+    /// push a work item onto the work queue
+    pub fn push<F>(&mut self, f: F) where F: FnOnce() + 'a {
+        self.0.push(f)
+    }
+
+    /// dispatch a single work item, returns true if additional items remain
+    pub fn pump_one(&mut self) -> bool {
+        self.0.pump_one()
+    }
+
+    /// dispatch all queued work items
+    pub fn pump(&mut self) {
+        self.0.pump()
+    }
+
+}
 
 #[cfg(test)]
 mod tests {
@@ -183,7 +216,7 @@ mod tests {
         let value = Rc::new(RefCell::new(0));
 
         {
-            let mut que = WorkQueueWithStats::with_stats(&mut stats);
+            let mut que = AdvancedWorkQueue::with_stats(&mut stats);
 
             for _ in 0..2 {
                 que.push({
@@ -224,7 +257,7 @@ mod tests {
         }
 
         {
-            let mut que = WorkQueueWithStats::with_stats(&mut stats);
+            let mut que = AdvancedWorkQueue::with_stats(&mut stats);
 
             const BIG : usize = 3072;
             const SMALL : usize = 768;
