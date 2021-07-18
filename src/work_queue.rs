@@ -79,6 +79,10 @@ pub struct AdvancedWorkQueue<'a, S:WorkQueueStats> {
     _store: PhantomData<[&'a ()]>
 }
 
+impl<'a, S:WorkQueueStats+Default> Default for AdvancedWorkQueue<'a, S> {
+    fn default() -> Self { Self::new() }
+}
+
 impl<'a, S:WorkQueueStats+Default> AdvancedWorkQueue<'a, S> {
 
     /// create a new work queue without a buffer

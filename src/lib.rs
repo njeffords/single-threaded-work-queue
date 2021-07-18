@@ -100,6 +100,10 @@ pub use work_queue::*;
 /// allocations per queued work item.
 pub struct WorkQueue<'a>(AdvancedWorkQueue<'a, NopWorkQueueStats>);
 
+impl<'a> Default for WorkQueue<'a> {
+    fn default() -> Self { Self::new() }
+}
+
 impl<'a> WorkQueue<'a> {
 
     /// initialize a new instance of a work queue
