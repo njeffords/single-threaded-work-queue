@@ -193,6 +193,11 @@ mod tests {
 
         assert_eq!(value, 2);
     }
+    #[test]
+    fn pump_empty() {
+        let mut que = WorkQueue::new();
+        assert!(!que.pump_one());
+    }
 
     #[test]
     fn simplest_que() {

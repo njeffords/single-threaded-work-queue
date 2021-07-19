@@ -136,6 +136,10 @@ impl<'a, S:WorkQueueStats> AdvancedWorkQueue<'a, S> {
     /// dispatch a single work item, returns true if additional items remain
     pub fn pump_one(&mut self) -> bool {
 
+        if self.first == null_mut() {
+            return false;
+        }
+
         let first = unsafe {&mut*self.first};
 
         let empty = first.exec_one();
