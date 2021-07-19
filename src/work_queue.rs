@@ -122,6 +122,19 @@ impl<'a, S:WorkQueueStats> AdvancedWorkQueue<'a, S> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        if self.next != null_mut() {
+            if self.first == self.next {
+                let block = unsafe {&*self.next};
+                block.beg == block.end
+            } else {
+                false
+            }
+        } else {
+            true
+        }
+    }
+
     /// push a work item onto the work queue
     pub fn push<F>(&mut self, f: F) where F: WorkItem + 'a {
         let f = Some(f);

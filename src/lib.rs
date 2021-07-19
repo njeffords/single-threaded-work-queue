@@ -111,6 +111,11 @@ impl<'a> WorkQueue<'a> {
         Self(AdvancedWorkQueue::new())
     }
 
+    /// return true of there are no items in the queue
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// create a new work queue with a initial storage capacity
     pub fn with_capacity(size: usize) -> Self {
         Self(AdvancedWorkQueue::with_capacity(size))
@@ -227,6 +232,8 @@ mod tests {
         {
             let mut que = AdvancedWorkQueue::with_stats(&mut stats);
 
+            assert!(que.is_empty());
+
             for _ in 0..2 {
                 que.push({
                     let value = value.clone();
@@ -234,7 +241,11 @@ mod tests {
                 });
             }
 
+            assert!(!que.is_empty());
+
             que.pump();
+
+            assert!(que.is_empty());
         }
 
         assert_eq!(*value.borrow(), 2);
@@ -271,6 +282,8 @@ mod tests {
             const BIG : usize = 3072;
             const SMALL : usize = 768;
 
+            assert!(que.is_empty());
+
             for _ in 0..4 {
                 que.push({
                     let r = BigRef::<BIG>::new(&value);
@@ -278,7 +291,17 @@ mod tests {
                 });
             }
 
-            que.pump();
+            assert!(!que.is_empty());
+
+            for _ in 0..3 {
+                que.pump_one();
+            }
+
+            assert!(!que.is_empty());
+
+            que.pump_one();
+
+            assert!(que.is_empty());
 
             for _ in 0..8 {
                 que.push({
@@ -287,7 +310,11 @@ mod tests {
                 });
             }
 
+            assert!(!que.is_empty());
+
             que.pump();
+
+            assert!(que.is_empty());
         }
 
         assert_eq!(*value.borrow(), 12);
