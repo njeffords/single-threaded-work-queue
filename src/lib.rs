@@ -20,7 +20,7 @@
 //! ```
 
 /// A run once work item.
-pub trait WorkItem {
+pub trait WorkItem<'a> {
 
     #[cfg(feature = "dynamic_work_item")]
     type Dynamic : DynamicWorkItem;
@@ -57,7 +57,7 @@ pub trait DynamicWorkItem {
     fn was_dispatched(&self) -> bool;
 }
 
-impl<T> WorkItem for T where T: FnOnce()->() {
+impl<'a, T> WorkItem<'a> for T where T: FnOnce()->() + 'a {
 
     #[cfg(feature = "dynamic_work_item")]
     type Dynamic = WorkItemWrapper<T>;
@@ -122,17 +122,17 @@ impl<'a> WorkQueue<'a> {
     }
 
     /// push a work item onto the work queue
-    pub fn push<F>(&mut self, f: F) where F: FnOnce() + 'a {
+    pub fn push<F>(&self, f: F) where F: FnOnce() + 'a {
         self.0.push(f)
     }
 
     /// dispatch a single work item, returns true if additional items remain
-    pub fn pump_one(&mut self) -> bool {
+    pub fn pump_one(&self) -> bool {
         self.0.pump_one()
     }
 
     /// dispatch all queued work items
-    pub fn pump(&mut self) {
+    pub fn pump(&self) {
         self.0.pump()
     }
 
@@ -141,11 +141,11 @@ impl<'a> WorkQueue<'a> {
 #[cfg(test)]
 mod tests {
 
-    use std::{rc::Rc, cell::RefCell};
+    use std::{rc::Rc, cell::{Cell, RefCell}};
 
     use super::*;
 
-    fn invoke(work_item: impl WorkItem) {
+    fn invoke<'a>(work_item: impl WorkItem<'a>) {
         work_item.execute()
     }
 
@@ -155,20 +155,28 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct Stats {
-        enqueued: usize,
-        executed: usize,
-        block_allocates: usize,
-        write_rollovers: usize,
-        read_rollovers: usize,
+    struct Stat(Cell<usize>);
+
+    impl Stat {
+        fn inc(&self) { self.0.set(self.0.get() + 1) }
+        fn get(&self) -> usize { self.0.get() }
     }
 
-    impl WorkQueueStats for &mut Stats {
-        fn enqueue(&mut self) { self.enqueued += 1 }
-        fn execute(&mut self) { self.executed += 1}
-        fn block_allocate(&mut self) { self.block_allocates += 1 }
-        fn write_rollover(&mut self) { self.write_rollovers += 1 }
-        fn read_rollover(&mut self) { self.read_rollovers += 1 }
+    #[derive(Default)]
+    struct Stats {
+        enqueued: Stat,
+        executed: Stat,
+        block_allocates: Stat,
+        write_rollovers: Stat,
+        read_rollovers: Stat,
+    }
+
+    impl WorkQueueStats for &Stats {
+        fn enqueue(&self) { self.enqueued.inc() }
+        fn execute(&self) { self.executed.inc() }
+        fn block_allocate(&self) { self.block_allocates.inc() }
+        fn write_rollover(&self) { self.write_rollovers.inc() }
+        fn read_rollover(&self) { self.read_rollovers.inc() }
     }
 
     #[test]
@@ -200,7 +208,7 @@ mod tests {
     }
     #[test]
     fn pump_empty() {
-        let mut que = WorkQueue::new();
+        let que = WorkQueue::new();
         assert!(!que.pump_one());
     }
 
@@ -210,7 +218,7 @@ mod tests {
         let value = Rc::new(RefCell::new(1));
 
         {
-            let mut que = WorkQueue::new();
+            let que = WorkQueue::new();
 
             que.push({
                 let value = value.clone();
@@ -226,11 +234,11 @@ mod tests {
     #[test]
     fn que_with_stats() {
 
-        let mut stats = Stats::default();
+        let stats = Stats::default();
         let value = Rc::new(RefCell::new(0));
 
         {
-            let mut que = AdvancedWorkQueue::with_stats(&mut stats);
+            let que = AdvancedWorkQueue::with_stats(&stats);
 
             assert!(que.is_empty());
 
@@ -249,9 +257,9 @@ mod tests {
         }
 
         assert_eq!(*value.borrow(), 2);
-        assert_eq!(stats.block_allocates, 1);
-        assert_eq!(stats.enqueued, 2);
-        assert_eq!(stats.executed, 2);
+        assert_eq!(stats.block_allocates.get(), 1);
+        assert_eq!(stats.enqueued.get(), 2);
+        assert_eq!(stats.executed.get(), 2);
     }
 
     #[test]
@@ -259,7 +267,7 @@ mod tests {
 
         use std::{rc::Rc, cell::RefCell};
 
-        let mut stats = Stats::default();
+        let stats = Stats::default();
         let value = Rc::new(RefCell::new(0));
 
         struct BigRef<const N: usize>{
@@ -277,7 +285,7 @@ mod tests {
         }
 
         {
-            let mut que = AdvancedWorkQueue::with_stats(&mut stats);
+            let que = AdvancedWorkQueue::with_stats(&stats);
 
             const BIG : usize = 3072;
             const SMALL : usize = 768;
@@ -318,10 +326,28 @@ mod tests {
         }
 
         assert_eq!(*value.borrow(), 12);
-        assert_eq!(stats.block_allocates, 4);
-        assert_eq!(stats.write_rollovers, 4);
-        assert_eq!(stats.read_rollovers, 4);
-        assert_eq!(stats.enqueued, 12);
-        assert_eq!(stats.executed, 12);
+        assert_eq!(stats.block_allocates.get(), 4);
+        assert_eq!(stats.write_rollovers.get(), 4);
+        assert_eq!(stats.read_rollovers.get(), 4);
+        assert_eq!(stats.enqueued.get(), 12);
+        assert_eq!(stats.executed.get(), 12);
+    }
+
+    #[test]
+    fn queue_in_queue() {
+
+        let value = RefCell::new(0);
+
+        {
+            let stats = Stats::default();
+            let que = AdvancedWorkQueue::with_stats(&stats);
+
+            que.push(|| que.push(|| *value.borrow_mut() += 1));
+
+            que.pump();
+        }
+
+        assert_eq!(*value.borrow(), 1);
+
     }
 }
