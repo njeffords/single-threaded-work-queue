@@ -1,23 +1,4 @@
-//! This crate provides a low overhead single threaded work queue that can
-//! enqueue and execute FnOnce closures
-//!
-//! ```
-//! use std::cell::RefCell;
-//! use single_threaded_work_queue::WorkQueue;
-//!
-//! let value = RefCell::new(0);
-//!
-//! {
-//!     let mut que = WorkQueue::new();
-//!
-//!     que.push(|| *value.borrow_mut() += 1);
-//!     que.push(|| *value.borrow_mut() += 1);
-//!
-//!     que.pump();
-//! }
-//!
-//! assert_eq!(*value.borrow(), 2);
-//! ```
+#![doc = include_str!("../README.md")]
 
 /// A run once work item.
 pub trait WorkItem<'a> {
