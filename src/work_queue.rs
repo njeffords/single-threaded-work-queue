@@ -171,6 +171,7 @@ impl<'a, S: WorkQueueStats+Sized> AdvancedWorkQueue<'a, S> {
             self.stats.execute();
 
             if empty {
+                #[cfg(debug_assertions)]
                 debug_assert!(first.is_reset());
 
                 if self.next_ptr() != self.first_ptr() {
